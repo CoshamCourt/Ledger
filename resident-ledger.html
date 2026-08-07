@@ -152,11 +152,23 @@
     if (!trimmed) return trimmed;
     return trimmed.split(/\s+/)[0];
   }
-  function buildTopUpEmail(resident) {
+  function buildTopUpEmail(resident, bankDetails) {
     var balance = currentBalance(resident.transactions);
     var reference = "PA " + getInitials(resident.name) + resident.room;
     var firstName = getFirstName(resident.name);
     var subject = "Personal Allowance Balance Top-Up Request - " + resident.name;
+    var hasBankDetails = !!(bankDetails && bankDetails.accountName && bankDetails.bankName && bankDetails.sortCode && bankDetails.accountNumber);
+    var bacsLines = hasBankDetails
+      ? [
+          "BACS: Please use the reference " + reference + " and confirm once the payment is sent.",
+          "   Account Name: " + bankDetails.accountName,
+          "   Bank: " + bankDetails.bankName,
+          "   Sort Code: " + bankDetails.sortCode,
+          "   Account Number: " + bankDetails.accountNumber
+        ]
+      : [
+          "BACS: Please contact the office for our bank transfer details (reference " + reference + ")."
+        ];
     var bodyLines = [
       "Dear " + (resident.familyName || "Family Member") + ",",
       "",
@@ -165,17 +177,13 @@
       "I am reaching out to let you know that " + firstName + "'s current personal allowance balance is " + gbp.format(balance) + ". To ensure that they continue to have access to the necessary personal items and services, we would greatly appreciate it if you could arrange a top-up at your earliest convenience.",
       "",
       "For your convenience, the personal allowance can be topped up using one of the following methods:",
-      "",
-      "BACS: Please use the reference " + reference + " and confirm once the payment is sent.",
-      "   Account Name: Crossbind Limited T/A Cosham Court Nursing Home",
-      "   Bank: NatWest",
-      "   Sort Code: 56-00-68",
-      "   Account Number: 58681655",
+      ""
+    ].concat(bacsLines).concat([
       "Cheque: Payable to Cosham Court Nursing Home",
       "Cash: Please feel free to visit our office during working hours.",
       "",
       "Thank you very much for your cooperation, and please don't hesitate to reach out if you have any questions."
-    ];
+    ]);
     return { subject: subject, body: bodyLines.join("\r\n") };
   }
   function currentBalance(transactions) {
@@ -223,6 +231,14 @@
       receipt: row.receipt || "",
       staff: row.staff,
       createdAt: new Date(row.created_at).getTime()
+    };
+  }
+  function orgSettingsFromRow(row) {
+    return {
+      accountName: row.bacs_account_name || "",
+      bankName: row.bacs_bank_name || "",
+      sortCode: row.bacs_sort_code || "",
+      accountNumber: row.bacs_account_number || ""
     };
   }
 
@@ -502,6 +518,7 @@
     var _l = React.useState(true); var loading = _l[0], setLoading = _l[1];
     var _err = React.useState(""); var loadError = _err[0], setLoadError = _err[1];
     var _st = React.useState("idle"); var saveStatus = _st[0], setSaveStatus = _st[1];
+    var _org = React.useState(null); var orgSettings = _org[0], setOrgSettings = _org[1];
     var savedTimeout = React.useRef(null);
 
     function flashStatus(status) {
@@ -531,18 +548,34 @@
       }
     }
 
-    React.useEffect(function () { loadAll(); }, []);
+    // Org-wide settings (e.g. BACS bank details for the top-up email) are kept
+    // in Supabase, not in this file, so they're never visible in the page source.
+    // A failure here doesn't block the rest of the ledger — Draft Email just
+    // falls back to asking the family to contact the office for bank details.
+    async function loadOrgSettings() {
+      try {
+        var res = await sb.from("org_settings").select("*").eq("id", 1).maybeSingle();
+        if (res.error) throw res.error;
+        setOrgSettings(res.data ? orgSettingsFromRow(res.data) : null);
+      } catch (e) {
+        setOrgSettings(null);
+      }
+    }
+
+    React.useEffect(function () { loadAll(); loadOrgSettings(); }, []);
 
     return {
       data: data, setData: setData, loading: loading, loadError: loadError,
-      saveStatus: saveStatus, flashStatus: flashStatus, reload: loadAll
+      saveStatus: saveStatus, flashStatus: flashStatus, reload: loadAll,
+      orgSettings: orgSettings
     };
   }
 
   function AdminApp(props) {
     var state = useLedgerState();
     var data = state.data, loading = state.loading, loadError = state.loadError,
-        saveStatus = state.saveStatus, flashStatus = state.flashStatus, setData = state.setData, reload = state.reload;
+        saveStatus = state.saveStatus, flashStatus = state.flashStatus, setData = state.setData, reload = state.reload,
+        orgSettings = state.orgSettings;
 
     var _sel = React.useState(null); var selectedId = _sel[0], setSelectedId = _sel[1];
     var _search = React.useState(""); var search = _search[0], setSearch = _search[1];
@@ -787,7 +820,7 @@
         setShowEditResident(true);
         return;
       }
-      var msg = buildTopUpEmail(resident);
+      var msg = buildTopUpEmail(resident, orgSettings);
       var url = "mailto:" + encodeURIComponent(resident.familyEmail.trim()) +
         "?subject=" + encodeURIComponent(msg.subject) +
         "&body=" + encodeURIComponent(msg.body);

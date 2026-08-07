@@ -116,6 +116,37 @@ create policy "Users can read own role"
   on user_roles for select
   using (auth.uid() = user_id);
 
+-- ---------------------------------------------------------------------------
+-- 5. ORG-WIDE SETTINGS
+--    Single row (id = 1) holding details such as the BACS bank details used
+--    in the top-up email template. Admin-only — Staff and logged-out users
+--    get nothing, so these never need to live in the client-side code.
+-- ---------------------------------------------------------------------------
+
+create table if not exists org_settings (
+  id integer primary key default 1,
+  bacs_account_name text,
+  bacs_bank_name text,
+  bacs_sort_code text,
+  bacs_account_number text
+);
+
+alter table org_settings enable row level security;
+
+grant select, update on org_settings to authenticated;
+revoke all on org_settings from anon;
+
+drop policy if exists "Admin can read org_settings" on org_settings;
+create policy "Admin can read org_settings"
+  on org_settings for select
+  using (is_admin());
+
+drop policy if exists "Admin can update org_settings" on org_settings;
+create policy "Admin can update org_settings"
+  on org_settings for update
+  using (is_admin())
+  with check (is_admin());
+
 -- =============================================================================
 -- Done. Next step: create the two login accounts (Admin + Staff) in
 -- Supabase Dashboard → Authentication → Users, then come back and run:
