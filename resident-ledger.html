@@ -1201,17 +1201,17 @@
     return h(ModalShell, { title: "Add New Resident", onCancel: props.onCancel },
       h("form", { onSubmit: submit, className: "space-y-5" },
         h(Field, { label: "Resident Name", htmlFor: "new-resident-name", required: true },
-          h("input", { id: "new-resident-name", type: "text", autoFocus: true, value: name, onChange: function (e) { setName(e.target.value); }, className: "modal-input", placeholder: "e.g. Margaret Holloway" })
+          h("input", { id: "new-resident-name", type: "text", autoFocus: true, value: name, onChange: function (e) { setName(e.target.value); }, className: "modal-input", placeholder: "Resident's full name" })
         ),
         h(Field, { label: "Room Number", htmlFor: "new-resident-room", required: true },
           h("input", { id: "new-resident-room", type: "text", value: room, onChange: function (e) { setRoom(e.target.value); }, className: "modal-input", placeholder: "e.g. 14" })
         ),
         h("div", { className: "grid sm:grid-cols-2 gap-5" },
           h(Field, { label: "Family Member Name (optional)", htmlFor: "new-resident-family-name" },
-            h("input", { id: "new-resident-family-name", type: "text", value: familyName, onChange: function (e) { setFamilyName(e.target.value); }, className: "modal-input", placeholder: "e.g. Susan Holloway" })
+            h("input", { id: "new-resident-family-name", type: "text", value: familyName, onChange: function (e) { setFamilyName(e.target.value); }, className: "modal-input", placeholder: "Family member's full name" })
           ),
           h(Field, { label: "Family Member Email (optional)", htmlFor: "new-resident-family-email" },
-            h("input", { id: "new-resident-family-email", type: "email", value: familyEmail, onChange: function (e) { setFamilyEmail(e.target.value); }, className: "modal-input", placeholder: "e.g. susan@example.com" })
+            h("input", { id: "new-resident-family-email", type: "email", value: familyEmail, onChange: function (e) { setFamilyEmail(e.target.value); }, className: "modal-input", placeholder: "family@example.com" })
           )
         ),
         error ? h("p", { className: "text-red-600 font-medium" }, error) : null,
@@ -1244,10 +1244,10 @@
         ),
         h("div", { className: "grid sm:grid-cols-2 gap-5" },
           h(Field, { label: "Family Member Name (optional)", htmlFor: "edit-resident-family-name" },
-            h("input", { id: "edit-resident-family-name", type: "text", value: familyName, onChange: function (e) { setFamilyName(e.target.value); }, className: "modal-input", placeholder: "e.g. Susan Holloway" })
+            h("input", { id: "edit-resident-family-name", type: "text", value: familyName, onChange: function (e) { setFamilyName(e.target.value); }, className: "modal-input", placeholder: "Family member's full name" })
           ),
           h(Field, { label: "Family Member Email (optional)", htmlFor: "edit-resident-family-email" },
-            h("input", { id: "edit-resident-family-email", type: "email", value: familyEmail, onChange: function (e) { setFamilyEmail(e.target.value); }, className: "modal-input", placeholder: "e.g. susan@example.com" })
+            h("input", { id: "edit-resident-family-email", type: "email", value: familyEmail, onChange: function (e) { setFamilyEmail(e.target.value); }, className: "modal-input", placeholder: "family@example.com" })
           )
         ),
         error ? h("p", { className: "text-red-600 font-medium" }, error) : null,
