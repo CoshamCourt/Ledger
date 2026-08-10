@@ -1397,7 +1397,8 @@
 
     var _d = React.useState(todayISO()); var date = _d[0], setDate = _d[1];
     var _r = React.useState(""); var reason = _r[0], setReason = _r[1];
-    var _t = React.useState("in"); var type = _t[0], setType = _t[1];
+    // Defaults to Cash Out, matching the Add Transaction window.
+    var _t = React.useState("out"); var type = _t[0], setType = _t[1];
     var _a = React.useState(""); var amount = _a[0], setAmount = _a[1];
     var _rc = React.useState(""); var receipt = _rc[0], setReceipt = _rc[1];
     var _e = React.useState(""); var error = _e[0], setError = _e[1];
@@ -1462,15 +1463,15 @@
         h(Field, { label: "Transaction Type", required: true },
           h("div", { className: "grid grid-cols-2 gap-3" },
             h("button", {
-              type: "button", onClick: function () { setType("in"); }, "aria-pressed": type === "in",
-              className: "flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-base border-2 focus:outline-none focus:ring-4 focus:ring-green-100 " +
-                (type === "in" ? "bg-green-50 border-green-600 text-green-700" : "bg-white border-slate-300 text-slate-500 hover:bg-slate-50")
-            }, h(ArrowDownCircle, { className: "w-5 h-5" }), "Cash In"),
-            h("button", {
               type: "button", onClick: function () { setType("out"); }, "aria-pressed": type === "out",
               className: "flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-base border-2 focus:outline-none focus:ring-4 focus:ring-red-100 " +
                 (type === "out" ? "bg-red-50 border-red-600 text-red-700" : "bg-white border-slate-300 text-slate-500 hover:bg-slate-50")
-            }, h(ArrowUpCircle, { className: "w-5 h-5" }), "Cash Out")
+            }, h(ArrowUpCircle, { className: "w-5 h-5" }), "Cash Out"),
+            h("button", {
+              type: "button", onClick: function () { setType("in"); }, "aria-pressed": type === "in",
+              className: "flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-base border-2 focus:outline-none focus:ring-4 focus:ring-green-100 " +
+                (type === "in" ? "bg-green-50 border-green-600 text-green-700" : "bg-white border-slate-300 text-slate-500 hover:bg-slate-50")
+            }, h(ArrowDownCircle, { className: "w-5 h-5" }), "Cash In")
           )
         ),
         h(Field, { label: "Reason / Description", htmlFor: "bulk-reason", required: true },
