@@ -33,11 +33,15 @@ create table if not exists transactions (
   created_at timestamptz not null default now()
 );
 
--- Maps a logged-in Supabase Auth user to a role: 'admin' or 'staff'.
+-- Maps a logged-in Supabase Auth user to a role.
+--   'admin'   — full access to the ledger
+--   'manager' — full access, identical to admin; kept as a separate role only
+--               so the ledger can show which kind of user made each entry
+--   'staff'   — balance summary only
 -- Rows here are added manually by you (see instructions), never by the app.
 create table if not exists user_roles (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  role text not null check (role in ('admin', 'staff'))
+  role text not null check (role in ('admin', 'manager', 'staff'))
 );
 
 -- ---------------------------------------------------------------------------
@@ -63,7 +67,10 @@ where r.archived = false
 group by r.id, r.room, r.name;
 
 -- ---------------------------------------------------------------------------
--- 3. HELPER FUNCTION: is the currently logged-in user an admin?
+-- 3. HELPER FUNCTION: does the logged-in user have full ledger access?
+--    True for both 'admin' and 'manager' — the two roles have identical
+--    permissions. Every RLS policy below is built on this function, so the
+--    manager role is granted access in exactly one place.
 -- ---------------------------------------------------------------------------
 
 create or replace function is_admin()
@@ -75,7 +82,7 @@ set search_path = public
 as $$
   select exists (
     select 1 from user_roles
-    where user_id = auth.uid() and role = 'admin'
+    where user_id = auth.uid() and role in ('admin', 'manager')
   );
 $$;
 
