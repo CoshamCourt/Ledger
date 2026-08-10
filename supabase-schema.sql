@@ -147,6 +147,46 @@ create policy "Admin can update org_settings"
   using (is_admin())
   with check (is_admin());
 
+-- ---------------------------------------------------------------------------
+-- 6. AUDIT LOG
+--    Append-only history of every change made through the app, so a mistaken
+--    entry can be traced back to who made it and when.
+--
+--    Deliberately NOT linked to residents with a foreign key: if a resident is
+--    ever removed, their audit history must survive. The resident's name is
+--    stored as a plain text snapshot taken at the time of the action.
+--
+--    There is no update or delete grant on this table for anyone, so entries
+--    cannot be altered or erased from inside the app once written.
+-- ---------------------------------------------------------------------------
+
+create table if not exists audit_log (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  user_email text not null,
+  action text not null,
+  resident_name text,
+  details text
+);
+
+create index if not exists audit_log_created_at_idx on audit_log (created_at desc);
+
+alter table audit_log enable row level security;
+
+-- Insert and read only. No update/delete grant, on purpose.
+grant select, insert on audit_log to authenticated;
+revoke all on audit_log from anon;
+
+drop policy if exists "Admin can read audit_log" on audit_log;
+create policy "Admin can read audit_log"
+  on audit_log for select
+  using (is_admin());
+
+drop policy if exists "Admin can append audit_log" on audit_log;
+create policy "Admin can append audit_log"
+  on audit_log for insert
+  with check (is_admin());
+
 -- =============================================================================
 -- Done. Next step: create the two login accounts (Admin + Staff) in
 -- Supabase Dashboard → Authentication → Users, then come back and run:

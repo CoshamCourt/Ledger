@@ -191,6 +191,8 @@
       return sum + (t.type === "in" ? Number(t.amount) : -Number(t.amount));
     }, 0);
   }
+  // Always accumulates oldest-first so each row's running balance is correct.
+  // Callers that display newest-first reverse the result afterwards.
   function withRunningBalance(transactions) {
     var sorted = transactions.slice().sort(function (a, b) {
       if (a.date !== b.date) return a.date < b.date ? -1 : 1;
@@ -242,6 +244,28 @@
     };
   }
 
+  // Writes one line of history to the audit_log table. Deliberately
+  // fire-and-forget: a failure to log must never undo or block the change the
+  // user just made, so errors are swallowed rather than surfaced.
+  function recordAudit(userEmail, action, residentName, details) {
+    try {
+      var p = sb.from("audit_log").insert({
+        user_email: userEmail || "unknown",
+        action: action,
+        resident_name: residentName || null,
+        details: details || null
+      });
+      if (p && typeof p.then === "function") p.then(function () {}, function () {});
+    } catch (e) { /* logging must never interrupt the ledger */ }
+  }
+  function describeTx(tx) {
+    return (tx.type === "in" ? "Cash In " : "Cash Out ") + gbp.format(Number(tx.amount)) +
+      " on " + formatDateDisplay(tx.date) +
+      " — " + tx.reason +
+      (tx.receipt ? " (receipt " + tx.receipt + ")" : "") +
+      " [staff: " + tx.staff + "]";
+  }
+
   // ---- Minimal inline icon set ----
   function icon(pathD, extraChildren) {
     return function (props) {
@@ -274,6 +298,7 @@
   var Layers = icon("M12 3 2 8l10 5 10-5-10-5zM2 14l10 5 10-5M2 11l10 5 10-5");
   var Mail = icon("M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3.5 6l8.5 7 8.5-7");
   var LogOut = icon("M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9");
+  var History = icon("M3 12a9 9 0 1 0 3-6.7L3 8M3 4v4h4M12 7v5l3.5 2");
 
   // =====================================================================
   // Auth / role gate
@@ -590,6 +615,7 @@
     var _confArch = React.useState(false); var confirmArchive = _confArch[0], setConfirmArchive = _confArch[1];
     var _restore = React.useState(null); var showRestoreConfirm = _restore[0], setShowRestoreConfirm = _restore[1];
     var _importing = React.useState(false); var importing = _importing[0], setImporting = _importing[1];
+    var _auditLog = React.useState(false); var showAuditLog = _auditLog[0], setShowAuditLog = _auditLog[1];
 
     var fileInputRef = React.useRef(null);
 
@@ -626,6 +652,7 @@
       }).select().single();
       if (res.error) { flashStatus("error"); window.alert("Could not add the resident. " + res.error.message); return; }
       var resident = residentFromRow(res.data, []);
+      recordAudit(props.userEmail, "Resident added", resident.name, "Room " + resident.room);
       setData(function (d) { return Object.assign({}, d, { residents: d.residents.concat([resident]) }); });
       flashStatus("saved");
       setShowAddResident(false);
@@ -634,6 +661,8 @@
 
     async function editResident(id, payload) {
       flashStatus("saving");
+      var before = null;
+      residents.forEach(function (r) { if (r.id === id) before = r; });
       var res = await sb.from("residents").update({
         name: payload.name.trim(),
         room: payload.room.trim(),
@@ -642,6 +671,14 @@
       }).eq("id", id).select().single();
       if (res.error) { flashStatus("error"); window.alert("Could not save the changes. " + res.error.message); return; }
       var updated = res.data;
+      if (before) {
+        var changes = [];
+        if (before.name !== updated.name) changes.push("name: \"" + before.name + "\" to \"" + updated.name + "\"");
+        if (before.room !== updated.room) changes.push("room: \"" + before.room + "\" to \"" + updated.room + "\"");
+        if (before.familyName !== (updated.family_name || "")) changes.push("family name: \"" + before.familyName + "\" to \"" + (updated.family_name || "") + "\"");
+        if (before.familyEmail !== (updated.family_email || "")) changes.push("family email: \"" + before.familyEmail + "\" to \"" + (updated.family_email || "") + "\"");
+        if (changes.length) recordAudit(props.userEmail, "Resident details edited", updated.name, changes.join("; "));
+      }
       setData(function (d) {
         return Object.assign({}, d, {
           residents: d.residents.map(function (r) {
@@ -664,10 +701,13 @@
       var res = await sb.from("transactions").insert(rows).select();
       if (res.error) { flashStatus("error"); window.alert("Could not add the bulk transaction. " + res.error.message); return; }
       var byResident = {};
+      var nameById = {};
+      residents.forEach(function (r) { nameById[r.id] = r.name; });
       (res.data || []).forEach(function (row) {
         var t = txFromRow(row);
         if (!byResident[row.resident_id]) byResident[row.resident_id] = [];
         byResident[row.resident_id].push(t);
+        recordAudit(props.userEmail, "Transaction added (bulk)", nameById[row.resident_id], describeTx(t));
       });
       setData(function (d) {
         return Object.assign({}, d, {
@@ -685,6 +725,9 @@
       flashStatus("saving");
       var res = await sb.from("residents").update({ archived: archived }).eq("id", id);
       if (res.error) { flashStatus("error"); window.alert("Could not update the archive status. " + res.error.message); setConfirmArchive(false); return; }
+      var archivedName = null;
+      residents.forEach(function (r) { if (r.id === id) archivedName = r.name; });
+      recordAudit(props.userEmail, archived ? "Resident archived" : "Resident restored", archivedName, null);
       setData(function (d) {
         return Object.assign({}, d, {
           residents: d.residents.map(function (r) { return r.id === id ? Object.assign({}, r, { archived: archived }) : r; })
@@ -702,6 +745,9 @@
       }).select().single();
       if (res.error) { flashStatus("error"); window.alert("Could not add the transaction. " + res.error.message); return; }
       var newTx = txFromRow(res.data);
+      var addedForName = null;
+      residents.forEach(function (r) { if (r.id === residentId) addedForName = r.name; });
+      recordAudit(props.userEmail, "Transaction added", addedForName, describeTx(newTx));
       setData(function (d) {
         return Object.assign({}, d, {
           residents: d.residents.map(function (r) {
@@ -715,8 +761,17 @@
 
     async function deleteTransaction(residentId, txId) {
       flashStatus("saving");
+      // Capture what's being removed before it's gone, so the audit entry can
+      // still describe it fully after the row no longer exists.
+      var deletedName = null, deletedTx = null;
+      residents.forEach(function (r) {
+        if (r.id !== residentId) return;
+        deletedName = r.name;
+        r.transactions.forEach(function (t) { if (t.id === txId) deletedTx = t; });
+      });
       var res = await sb.from("transactions").delete().eq("id", txId);
       if (res.error) { flashStatus("error"); window.alert("Could not delete the transaction. " + res.error.message); setConfirmDeleteTx(null); return; }
+      recordAudit(props.userEmail, "Transaction deleted", deletedName, deletedTx ? describeTx(deletedTx) : null);
       setData(function (d) {
         return Object.assign({}, d, {
           residents: d.residents.map(function (r) {
@@ -762,6 +817,8 @@
       if (!showRestoreConfirm) return;
       var backup = showRestoreConfirm;
       setImporting(true);
+      recordAudit(props.userEmail, "Restore from backup started", null,
+        "Replacing all data with a backup file containing " + backup.residents.length + " resident record(s)");
       try {
         var existing = await sb.from("residents").select("id");
         if (existing.error) throw existing.error;
@@ -793,6 +850,8 @@
             if (insT.error) throw insT.error;
           }
         }
+        recordAudit(props.userEmail, "Restore from backup completed", null,
+          backup.residents.length + " resident record(s) restored");
         await reload();
         setShowRestoreConfirm(null);
         setSelectedId(null);
@@ -939,7 +998,11 @@
             h("button", {
               onClick: function () { fileInputRef.current && fileInputRef.current.click(); },
               className: "flex items-center justify-center gap-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-medium px-4 py-2 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-blue-100"
-            }, h(Upload, { className: "w-4 h-4" }), "Restore from Backup")
+            }, h(Upload, { className: "w-4 h-4" }), "Restore from Backup"),
+            h("button", {
+              onClick: function () { setShowAuditLog(true); },
+              className: "flex items-center justify-center gap-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-medium px-4 py-2 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-blue-100"
+            }, h(History, { className: "w-4 h-4" }), "Audit Log")
           )
         ),
         h("main", { className: "flex-1 min-w-0 p-4 sm:p-6 lg:p-8 overflow-y-auto min-h-0" },
@@ -965,6 +1028,7 @@
       (printJob && printJob.target === "summary") ? h(PrintSummarySheet, { residents: residents }) : null,
       h("input", { ref: fileInputRef, type: "file", accept: "application/json", className: "hidden", onChange: handleRestoreFile }),
       showAddResident ? h(AddResidentModal, { onCancel: function () { setShowAddResident(false); }, onSave: addResident }) : null,
+      showAuditLog ? h(AuditLogModal, { onCancel: function () { setShowAuditLog(false); } }) : null,
       showBulkTransaction ? h(BulkTransactionModal, {
         residents: residents,
         onCancel: function () { setShowBulkTransaction(false); },
@@ -1023,7 +1087,7 @@
 
   function LedgerSheet(props) {
     var resident = props.resident;
-    var rows = withRunningBalance(resident.transactions);
+    var rows = withRunningBalance(resident.transactions).reverse();
     var balance = currentBalance(resident.transactions);
 
     return h("div", null,
@@ -1439,6 +1503,84 @@
         ),
         error ? h("p", { className: "text-red-600 font-medium" }, error) : null,
         h(ModalActions, { onCancel: props.onCancel, confirmLabel: "Add to " + selectedCount + " Resident" + (selectedCount === 1 ? "" : "s") })
+      )
+    );
+  }
+
+  function AuditLogModal(props) {
+    var _rows = React.useState([]); var rows = _rows[0], setRows = _rows[1];
+    var _loading = React.useState(true); var loading = _loading[0], setLoading = _loading[1];
+    var _error = React.useState(""); var error = _error[0], setError = _error[1];
+    var _q = React.useState(""); var query = _q[0], setQuery = _q[1];
+
+    React.useEffect(function () {
+      var cancelled = false;
+      sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(500)
+        .then(function (res) {
+          if (cancelled) return;
+          setLoading(false);
+          if (res.error) { setError("Could not load the audit log. " + res.error.message); return; }
+          setRows(res.data || []);
+        });
+      return function () { cancelled = true; };
+    }, []);
+
+    var visible = React.useMemo(function () {
+      var q = query.trim().toLowerCase();
+      if (!q) return rows;
+      return rows.filter(function (r) {
+        return ((r.resident_name || "") + " " + (r.action || "") + " " + (r.details || "") + " " + (r.user_email || ""))
+          .toLowerCase().indexOf(q) !== -1;
+      });
+    }, [rows, query]);
+
+    function formatStamp(iso) {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      return d.toLocaleString("en-GB", {
+        day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"
+      });
+    }
+
+    return h(ModalShell, { title: "Audit Log", onCancel: props.onCancel, wide: true },
+      h("div", { className: "space-y-4" },
+        h("p", { className: "text-slate-500 text-sm -mt-2" },
+          "A permanent record of every change made to the ledger. Entries cannot be edited or removed. Showing the 500 most recent."
+        ),
+        h("input", {
+          type: "text", value: query, onChange: function (e) { setQuery(e.target.value); },
+          placeholder: "Search by resident, action, or who made the change...",
+          className: "modal-input"
+        }),
+        loading
+          ? h("p", { className: "text-center text-slate-500 py-8" }, "Loading audit log...")
+          : error
+          ? h("p", { className: "text-center text-red-600 py-8" }, error)
+          : visible.length === 0
+          ? h("p", { className: "text-center text-slate-500 py-8" },
+              rows.length === 0 ? "No changes have been recorded yet." : "No entries match your search.")
+          : h("div", { className: "border border-slate-200 rounded-xl overflow-hidden max-h-[55vh] overflow-y-auto" },
+              h("table", { className: "w-full text-left border-collapse" },
+                h("thead", { className: "sticky top-0" },
+                  h("tr", { className: "bg-slate-100" },
+                    h("th", { className: "px-3 py-2 text-slate-600 font-semibold text-xs uppercase tracking-wide" }, "When"),
+                    h("th", { className: "px-3 py-2 text-slate-600 font-semibold text-xs uppercase tracking-wide" }, "Action"),
+                    h("th", { className: "px-3 py-2 text-slate-600 font-semibold text-xs uppercase tracking-wide" }, "Resident"),
+                    h("th", { className: "px-3 py-2 text-slate-600 font-semibold text-xs uppercase tracking-wide" }, "Details"),
+                    h("th", { className: "px-3 py-2 text-slate-600 font-semibold text-xs uppercase tracking-wide" }, "By")
+                  )
+                ),
+                h("tbody", null, visible.map(function (r) {
+                  return h("tr", { key: r.id, className: "border-b border-slate-100 last:border-0 align-top" },
+                    h("td", { className: "px-3 py-2.5 text-sm text-slate-500 whitespace-nowrap" }, formatStamp(r.created_at)),
+                    h("td", { className: "px-3 py-2.5 text-sm font-semibold text-slate-800" }, r.action),
+                    h("td", { className: "px-3 py-2.5 text-sm text-slate-700" }, r.resident_name || "-"),
+                    h("td", { className: "px-3 py-2.5 text-sm text-slate-600" }, r.details || "-"),
+                    h("td", { className: "px-3 py-2.5 text-sm text-slate-500" }, r.user_email)
+                  );
+                }))
+              )
+            )
       )
     );
   }
