@@ -209,6 +209,11 @@
 
   var emptyData = { residents: [] };
 
+  // Roles with full access to the ledger. They all see the same screens; the
+  // label is what gets stamped onto transactions and shown in the Signature
+  // column, so the ledger records which kind of user made each entry.
+  var FULL_ACCESS_ROLES = { admin: "Admin", manager: "Manager" };
+
   // ---- Row <-> app-object conversion (database is snake_case, app is camelCase) ----
   function residentFromRow(row, txRows) {
     return {
@@ -263,7 +268,7 @@
       " on " + formatDateDisplay(tx.date) +
       " — " + tx.reason +
       (tx.receipt ? " (receipt " + tx.receipt + ")" : "") +
-      " [staff: " + tx.staff + "]";
+      " [entered by: " + tx.staff + "]";
   }
 
   // ---- Minimal inline icon set ----
@@ -359,7 +364,13 @@
     if (!session) return h(LoginScreen, null);
     if (roleLoading) return h(LoadingScreen, { message: "Checking your account permissions..." });
     if (roleError) return h(AccessErrorScreen, { message: roleError, onLogout: logout });
-    if (role === "admin") return h(AdminApp, { onLogout: logout, userEmail: session.user.email });
+    if (FULL_ACCESS_ROLES[role]) {
+      return h(AdminApp, {
+        onLogout: logout,
+        userEmail: session.user.email,
+        roleLabel: FULL_ACCESS_ROLES[role]
+      });
+    }
     if (role === "staff") return h(StaffView, { onLogout: logout, userEmail: session.user.email });
     return h(LoadingScreen, { message: "Loading..." });
   }
@@ -696,7 +707,7 @@
     async function addBulkTransaction(residentIds, tx) {
       flashStatus("saving");
       var rows = residentIds.map(function (id) {
-        return { resident_id: id, date: tx.date, reason: tx.reason, type: tx.type, amount: tx.amount, receipt: tx.receipt || "", staff: tx.staff };
+        return { resident_id: id, date: tx.date, reason: tx.reason, type: tx.type, amount: tx.amount, receipt: tx.receipt || "", staff: props.roleLabel };
       });
       var res = await sb.from("transactions").insert(rows).select();
       if (res.error) { flashStatus("error"); window.alert("Could not add the bulk transaction. " + res.error.message); return; }
@@ -741,7 +752,7 @@
       flashStatus("saving");
       var res = await sb.from("transactions").insert({
         resident_id: residentId, date: tx.date, reason: tx.reason,
-        type: tx.type, amount: tx.amount, receipt: tx.receipt || "", staff: tx.staff
+        type: tx.type, amount: tx.amount, receipt: tx.receipt || "", staff: props.roleLabel
       }).select().single();
       if (res.error) { flashStatus("error"); window.alert("Could not add the transaction. " + res.error.message); return; }
       var newTx = txFromRow(res.data);
@@ -841,7 +852,7 @@
             var txRows = txs.map(function (t) {
               var row = {
                 resident_id: newResidentId, date: t.date, reason: t.reason, type: t.type,
-                amount: t.amount, receipt: t.receipt || "", staff: t.staff
+                amount: t.amount, receipt: t.receipt || "", staff: t.staff || "Unknown"
               };
               if (t.createdAt) row.created_at = new Date(t.createdAt).toISOString();
               return row;
@@ -1031,6 +1042,7 @@
       showAuditLog ? h(AuditLogModal, { onCancel: function () { setShowAuditLog(false); } }) : null,
       showBulkTransaction ? h(BulkTransactionModal, {
         residents: residents,
+        roleLabel: props.roleLabel,
         onCancel: function () { setShowBulkTransaction(false); },
         onSave: addBulkTransaction
       }) : null,
@@ -1040,6 +1052,7 @@
         onSave: function (payload) { editResident(selectedResident.id, payload); }
       }) : null,
       (showAddTransaction && selectedResident) ? h(AddTransactionModal, {
+        roleLabel: props.roleLabel,
         onCancel: function () { setShowAddTransaction(false); },
         onSave: function (tx) { addTransaction(selectedResident.id, tx); }
       }) : null,
@@ -1326,7 +1339,6 @@
     var _t = React.useState("in"); var type = _t[0], setType = _t[1];
     var _a = React.useState(""); var amount = _a[0], setAmount = _a[1];
     var _rc = React.useState(""); var receipt = _rc[0], setReceipt = _rc[1];
-    var _s = React.useState(""); var staff = _s[0], setStaff = _s[1];
     var _e = React.useState(""); var error = _e[0], setError = _e[1];
 
     function submit(e) {
@@ -1335,8 +1347,7 @@
       if (!date) return setError("Please choose a date.");
       if (!reason.trim()) return setError("Please enter a reason or description.");
       if (!amount || isNaN(amt) || amt <= 0) return setError("Please enter an amount greater than zero.");
-      if (!staff.trim()) return setError("Please enter staff initials.");
-      props.onSave({ date: date, reason: reason.trim(), type: type, amount: amt, receipt: receipt.trim(), staff: staff.trim() });
+      props.onSave({ date: date, reason: reason.trim(), type: type, amount: amt, receipt: receipt.trim() });
     }
 
     return h(ModalShell, { title: "Add Transaction", onCancel: props.onCancel },
@@ -1369,8 +1380,8 @@
             h("input", { id: "tx-receipt", type: "text", value: receipt, onChange: function (e) { setReceipt(e.target.value); }, className: "modal-input", placeholder: "e.g. R-2381" })
           )
         ),
-        h(Field, { label: "Staff Initials", htmlFor: "tx-staff", required: true },
-          h("input", { id: "tx-staff", type: "text", value: staff, onChange: function (e) { setStaff(e.target.value); }, className: "modal-input", placeholder: "e.g. J.S." })
+        h("p", { className: "text-slate-500 text-sm" },
+          "This entry will be recorded against ", h("strong", null, props.roleLabel), "."
         ),
         error ? h("p", { className: "text-red-600 font-medium" }, error) : null,
         h(ModalActions, { onCancel: props.onCancel, confirmLabel: "Add Transaction" })
@@ -1388,7 +1399,6 @@
     var _t = React.useState("in"); var type = _t[0], setType = _t[1];
     var _a = React.useState(""); var amount = _a[0], setAmount = _a[1];
     var _rc = React.useState(""); var receipt = _rc[0], setReceipt = _rc[1];
-    var _s = React.useState(""); var staff = _s[0], setStaff = _s[1];
     var _e = React.useState(""); var error = _e[0], setError = _e[1];
     var _sel = React.useState({}); var selected = _sel[0], setSelected = _sel[1];
     var _q = React.useState(""); var query = _q[0], setQuery = _q[1];
@@ -1428,11 +1438,10 @@
       if (!date) return setError("Please choose a date.");
       if (!reason.trim()) return setError("Please enter a reason or description.");
       if (!amount || isNaN(amt) || amt <= 0) return setError("Please enter an amount greater than zero.");
-      if (!staff.trim()) return setError("Please enter staff initials.");
       if (selectedCount === 0) return setError("Please select at least one resident.");
       props.onSave(selectedIds, {
         date: date, reason: reason.trim(), type: type, amount: amt,
-        receipt: receipt.trim(), staff: staff.trim()
+        receipt: receipt.trim()
       });
     }
 
@@ -1466,13 +1475,8 @@
         h(Field, { label: "Reason / Description", htmlFor: "bulk-reason", required: true },
           h("input", { id: "bulk-reason", type: "text", value: reason, onChange: function (e) { setReason(e.target.value); }, className: "modal-input", placeholder: "e.g. Chiropodist visit" })
         ),
-        h("div", { className: "grid sm:grid-cols-2 gap-5" },
-          h(Field, { label: "Receipt Number (optional)", htmlFor: "bulk-receipt" },
-            h("input", { id: "bulk-receipt", type: "text", value: receipt, onChange: function (e) { setReceipt(e.target.value); }, className: "modal-input", placeholder: "e.g. R-2381" })
-          ),
-          h(Field, { label: "Staff Initials", htmlFor: "bulk-staff", required: true },
-            h("input", { id: "bulk-staff", type: "text", value: staff, onChange: function (e) { setStaff(e.target.value); }, className: "modal-input", placeholder: "e.g. J.S." })
-          )
+        h(Field, { label: "Receipt Number (optional)", htmlFor: "bulk-receipt" },
+          h("input", { id: "bulk-receipt", type: "text", value: receipt, onChange: function (e) { setReceipt(e.target.value); }, className: "modal-input", placeholder: "e.g. R-2381" })
         ),
         h(Field, { label: "Apply to Residents (" + selectedCount + " selected)", required: true },
           h("div", { className: "border border-slate-300 rounded-xl overflow-hidden" },
@@ -1500,6 +1504,9 @@
                   })
             )
           )
+        ),
+        h("p", { className: "text-slate-500 text-sm" },
+          "These entries will be recorded against ", h("strong", null, props.roleLabel), "."
         ),
         error ? h("p", { className: "text-red-600 font-medium" }, error) : null,
         h(ModalActions, { onCancel: props.onCancel, confirmLabel: "Add to " + selectedCount + " Resident" + (selectedCount === 1 ? "" : "s") })
