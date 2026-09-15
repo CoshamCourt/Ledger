@@ -309,6 +309,19 @@
   // Auth / role gate
   // =====================================================================
 
+  // Supabase hands back a brand new session object on every token refresh —
+  // including when a hidden browser tab becomes visible again, which makes its
+  // auth client re-check the stored session. Holding on to the previous object
+  // while it is still the same signed-in user keeps the React tree stable, so
+  // open forms and anything typed into them survive a tab switch.
+  function keepSessionIdentity(prev, incoming) {
+    var next = incoming || null;
+    if (prev === undefined) return next;
+    if (prev === null && next === null) return prev;
+    if (prev && next && prev.user && next.user && prev.user.id === next.user.id) return prev;
+    return next;
+  }
+
   function AppRoot() {
     var _session = React.useState(undefined); var session = _session[0], setSession = _session[1]; // undefined = checking, null = signed out
     var _role = React.useState(null); var role = _role[0], setRole = _role[1];
@@ -317,24 +330,31 @@
 
     React.useEffect(function () {
       sb.auth.getSession().then(function (res) {
-        setSession((res.data && res.data.session) || null);
+        var incoming = (res.data && res.data.session) || null;
+        setSession(function (prev) { return keepSessionIdentity(prev, incoming); });
       }).catch(function () {
-        setSession(null);
+        setSession(function (prev) { return keepSessionIdentity(prev, null); });
       });
       var listener = sb.auth.onAuthStateChange(function (event, newSession) {
-        setSession(newSession || null);
+        setSession(function (prev) { return keepSessionIdentity(prev, newSession); });
       });
       return function () {
         if (listener && listener.data && listener.data.subscription) listener.data.subscription.unsubscribe();
       };
     }, []);
 
+    // Only the signed-in user's identity can change their role, so this is keyed
+    // on the user id rather than the session object. Keying it on the session
+    // itself would re-run on every token refresh and briefly unmount the whole
+    // app, discarding any form the user had open.
+    var userId = session ? session.user.id : null;
+
     React.useEffect(function () {
       var cancelled = false;
-      if (!session) { setRole(null); setRoleError(""); return; }
+      if (!userId) { setRole(null); setRoleError(""); return; }
       setRoleLoading(true);
       setRoleError("");
-      sb.from("user_roles").select("role").eq("user_id", session.user.id).maybeSingle()
+      sb.from("user_roles").select("role").eq("user_id", userId).maybeSingle()
         .then(function (res) {
           if (cancelled) return;
           if (res.error) {
@@ -354,7 +374,7 @@
         })
         .finally(function () { if (!cancelled) setRoleLoading(false); });
       return function () { cancelled = true; };
-    }, [session]);
+    }, [userId]);
 
     function logout() {
       sb.auth.signOut();
@@ -362,7 +382,10 @@
 
     if (session === undefined) return h(LoadingScreen, { message: "Checking your session..." });
     if (!session) return h(LoginScreen, null);
-    if (roleLoading) return h(LoadingScreen, { message: "Checking your account permissions..." });
+    // Only blank the screen while establishing the role for the first time.
+    // Re-checking an already-known role must never unmount the running app,
+    // which would throw away any open form and unsaved input.
+    if (roleLoading && !role) return h(LoadingScreen, { message: "Checking your account permissions..." });
     if (roleError) return h(AccessErrorScreen, { message: roleError, onLogout: logout });
     if (FULL_ACCESS_ROLES[role]) {
       return h(AdminApp, {
