@@ -58,7 +58,7 @@ Specifically:
 - **Logged-out users get nothing.** All access is revoked for anonymous requests.
 - **Staff can only read the `balance_summary` view** (room, name, balance). They have no permission on the underlying `residents` or `transactions` tables at all.
 - **Admin/Manager access is granted through a single database function**, `is_admin()`, which every policy is built on. Roles can't drift out of step, because there's only one place that decides.
-- **No sensitive data is hardcoded in the app.** Bank/BACS details live in the `org_settings` table (Admin-only) and are fetched after login — they are never present in the page source. Resident names and family contact details only ever arrive from the database after logging in. The app starts with an empty resident list.
+- **No sensitive data is hardcoded in the app.** Bank/BACS details and the cheque payee name live in the `org_settings` table (Admin-only) and are fetched after login — they are never present in the page source. Resident names and family contact details only ever arrive from the database after logging in. The app starts with an empty resident list.
 - **The audit log cannot be tampered with.** It has no update or delete permission granted to anyone, so entries can't be edited or erased from inside the app — including by an Admin.
 
 ### About the key in the source code
@@ -80,7 +80,7 @@ Defined in [`supabase-schema.sql`](supabase-schema.sql).
 | `residents` | Name, room, family contact details, archived flag |
 | `transactions` | Cash in/out entries linked to a resident: date, reason, type, amount, receipt number, who entered it |
 | `user_roles` | Maps each login account to `admin`, `manager` or `staff` |
-| `org_settings` | Single row holding the BACS bank details used in the top-up email |
+| `org_settings` | Single row holding the BACS bank details and cheque payee name used in the top-up email |
 | `audit_log` | Append-only record of every change: who, what, when |
 | `balance_summary` | Read-only view exposing only room, name and balance for active residents — the only thing Staff can read |
 | `is_admin()` | Helper function returning true for `admin` and `manager`; all access policies are built on it |
@@ -130,7 +130,7 @@ on conflict (user_id) do update set role = 'staff';
 
 Until that role row exists, the account can log in but will be told it hasn't been given access yet.
 
-### Changing the bank details
+### Changing the bank and cheque details
 
 These are read from `org_settings` and used in the top-up email:
 
@@ -139,15 +139,22 @@ update org_settings set
   bacs_account_name   = '...',
   bacs_bank_name      = '...',
   bacs_sort_code      = '...',
-  bacs_account_number = '...'
+  bacs_account_number = '...',
+  cheque_payee        = '...'
 where id = 1;
 ```
 
-If that row is missing or incomplete, the Draft Email still works — it just asks the family to contact the office for bank details instead of printing them.
+`cheque_payee` is the name a cheque should be made payable to.
+
+Each part of the email falls back on its own if the details are missing, so the Draft Email always works: without the bank details it asks the family to contact the office for them, and without `cheque_payee` it asks the office who to make the cheque payable to.
 
 ### Backups
 
-Supabase holds the live data, but the *Backup Data* button downloads a complete JSON copy that you hold yourself. Worth doing regularly and keeping somewhere other than one computer. *Restore from Backup* reads that same file back in — note that it **replaces all data** in the database, and asks for confirmation first.
+Supabase holds the live data, but the *Backup Data* button downloads a complete JSON copy that you hold yourself. Worth doing regularly and keeping somewhere other than one computer.
+
+The file contains the resident records **and** the `org_settings` row, so it includes the bank and cheque details — keep backups somewhere secure.
+
+*Restore from Backup* reads that same file back in — note that it **replaces all data** in the database, and asks for confirmation first. Backups made before the settings were included still restore normally; they simply leave the settings already in the database untouched.
 
 ---
 
@@ -161,14 +168,16 @@ If the Supabase project were ever lost, this is the whole recovery path:
 4. Add a `user_roles` row for each account, as shown above.
 5. Fill in the `org_settings` row:
    ```sql
-   insert into org_settings (id, bacs_account_name, bacs_bank_name, bacs_sort_code, bacs_account_number)
-   values (1, '...', '...', '...', '...')
+   insert into org_settings (id, bacs_account_name, bacs_bank_name, bacs_sort_code, bacs_account_number, cheque_payee)
+   values (1, '...', '...', '...', '...', '...')
    on conflict (id) do update set
      bacs_account_name = excluded.bacs_account_name,
      bacs_bank_name = excluded.bacs_bank_name,
      bacs_sort_code = excluded.bacs_sort_code,
-     bacs_account_number = excluded.bacs_account_number;
+     bacs_account_number = excluded.bacs_account_number,
+     cheque_payee = excluded.cheque_payee;
    ```
+   A backup made by a recent version already contains these, so step 7 will restore them for you.
 6. Update `SUPABASE_URL` and `SUPABASE_ANON_KEY` near the top of `index.html` to point at the new project, and push to `main`.
 7. Restore the data from your most recent JSON backup using *Restore from Backup*.
 

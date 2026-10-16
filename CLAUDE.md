@@ -4,7 +4,7 @@ Instructions for Claude when working on this repository. Read this first, every 
 
 ## Who I am and how to work with me
 
-- I'm Paul, admin at **Cosham Court care home**. I'm not a developer.
+- I'm Paul, the administrator who looks after this app. I'm not a developer.
 - Explain things in plain English. Avoid jargon, or explain it when you have to use it.
 - **Before making any change, tell me briefly what you plan to do and why**, and point out any risk to data, security or day-to-day use. For anything bigger than a small fix, wait for my OK.
 - After a change, give me a short summary: what changed, what I should check, and whether anything needs doing in Supabase (for example, SQL to run).
@@ -46,6 +46,15 @@ This is real financial data about vulnerable people, and it is checked by inspec
 6. **Sensitive settings live in the database, not the code.** Bank details stay in `org_settings` (Admin-only) and are fetched after login.
 7. **Database changes need to be run in Supabase by hand.** Pushing code does not change the database. Whenever you change `supabase-schema.sql`, also give me the exact SQL to paste into the Supabase SQL Editor, and say whether it's safe to run on the live database with existing data.
 8. **Don't break existing records or backups.** Changes must keep working with existing data and with JSON backup files made by earlier versions. Remember that *Restore from Backup* replaces all data.
+9. **Commits must never carry my real email address.** At the start of every session, before the first commit, set the commit identity and check it with `git config user.email`:
+   - Name: `CoshamCourt`
+   - Email: `314305870+CoshamCourt@users.noreply.github.com`
+
+   The container is rebuilt for each session, so this has to be set again every time:
+   ```
+   git config user.name "CoshamCourt"
+   git config user.email "314305870+CoshamCourt@users.noreply.github.com"
+   ```
 
 ## Behaviour to preserve
 

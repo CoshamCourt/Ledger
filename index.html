@@ -169,6 +169,9 @@
       : [
           "BACS: Please contact the office for our bank transfer details (reference " + reference + ")."
         ];
+    var chequeLine = (bankDetails && bankDetails.chequePayee)
+      ? "Cheque: Payable to " + bankDetails.chequePayee
+      : "Cheque: Please contact the office for details of who to make the cheque payable to.";
     var bodyLines = [
       "Dear " + (resident.familyName || "Family Member") + ",",
       "",
@@ -179,7 +182,7 @@
       "For your convenience, the personal allowance can be topped up using one of the following methods:",
       ""
     ].concat(bacsLines).concat([
-      "Cheque: Payable to Cosham Court Nursing Home",
+      chequeLine,
       "Cash: Please feel free to visit our office during working hours.",
       "",
       "Thank you very much for your cooperation, and please don't hesitate to reach out if you have any questions."
@@ -245,7 +248,8 @@
       accountName: row.bacs_account_name || "",
       bankName: row.bacs_bank_name || "",
       sortCode: row.bacs_sort_code || "",
-      accountNumber: row.bacs_account_number || ""
+      accountNumber: row.bacs_account_number || "",
+      chequePayee: row.cheque_payee || ""
     };
   }
 
@@ -438,8 +442,7 @@
       h("div", { className: "bg-white rounded-2xl shadow-md border border-slate-200 w-full max-w-md p-8" },
         h("div", { className: "flex flex-col items-center mb-6" },
           h("div", { className: "bg-blue-800 text-white rounded-xl p-3 mb-3" }, h(Wallet, { className: "w-8 h-8" })),
-          h("h1", { className: "text-2xl font-bold text-slate-800 text-center" }, "Resident Personal Allowance Ledger"),
-          h("p", { className: "text-slate-500 text-sm mt-1" }, "Cosham Court Care Home")
+          h("h1", { className: "text-2xl font-bold text-slate-800 text-center" }, "Resident Personal Allowance Ledger")
         ),
         h("form", { onSubmit: submit, className: "space-y-5" },
           h(Field, { label: "Email address", htmlFor: "login-email", required: true },
@@ -625,7 +628,8 @@
 
     return {
       data: data, setData: setData, loading: loading, loadError: loadError,
-      saveStatus: saveStatus, flashStatus: flashStatus, reload: loadAll,
+      saveStatus: saveStatus, flashStatus: flashStatus,
+      reload: function () { return Promise.all([loadAll(), loadOrgSettings()]); },
       orgSettings: orgSettings
     };
   }
@@ -819,7 +823,11 @@
     }
 
     function backupData() {
-      var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      // Includes the organisation settings so a rebuild can restore them too.
+      // Note this puts the bank details in the downloaded file: keep backups
+      // somewhere secure.
+      var payload = Object.assign({}, data, { orgSettings: orgSettings || null });
+      var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a");
       a.href = url;
@@ -884,12 +892,32 @@
             if (insT.error) throw insT.error;
           }
         }
+        // Backups made before organisation settings were included simply have
+        // no orgSettings key. Those restore exactly as before, leaving the
+        // settings already in the database untouched.
+        var settingsNote = "";
+        if (backup.orgSettings) {
+          var os = backup.orgSettings;
+          var osRes = await sb.from("org_settings").update({
+            bacs_account_name: os.accountName || "",
+            bacs_bank_name: os.bankName || "",
+            bacs_sort_code: os.sortCode || "",
+            bacs_account_number: os.accountNumber || "",
+            cheque_payee: os.chequePayee || ""
+          }).eq("id", 1);
+          // Resident data is the critical part and is already in by this point,
+          // so a settings failure is reported rather than failing the restore.
+          if (osRes.error) {
+            settingsNote = " The organisation settings could not be updated (" + osRes.error.message + ") - please check them in Supabase.";
+          }
+        }
         recordAudit(props.userEmail, "Restore from backup completed", null,
-          backup.residents.length + " resident record(s) restored");
+          backup.residents.length + " resident record(s) restored" +
+          (backup.orgSettings ? (settingsNote ? "; organisation settings failed to restore" : "; organisation settings restored") : ""));
         await reload();
         setShowRestoreConfirm(null);
         setSelectedId(null);
-        window.alert("Backup restored successfully.");
+        window.alert("Backup restored successfully." + settingsNote);
       } catch (e) {
         window.alert("Restore failed: " + e.message + ". Some data may have been partially imported — please check the resident list before continuing.");
       } finally {
@@ -1098,7 +1126,7 @@
       }) : null,
       showRestoreConfirm ? h(ConfirmModal, {
         title: "Restore from backup?",
-        message: "This will replace all resident data in the shared ledger database with the contents of the backup file (" + showRestoreConfirm.residents.length + " resident record" + (showRestoreConfirm.residents.length === 1 ? "" : "s") + "). This affects everyone using the ledger and cannot be undone.",
+        message: "This will replace all resident data in the shared ledger database with the contents of the backup file (" + showRestoreConfirm.residents.length + " resident record" + (showRestoreConfirm.residents.length === 1 ? "" : "s") + ")." + (showRestoreConfirm.orgSettings ? " It will also replace the saved bank and cheque details." : "") + " This affects everyone using the ledger and cannot be undone.",
         confirmLabel: importing ? "Restoring..." : "Restore Data", danger: true, disabled: importing,
         onCancel: function () { setShowRestoreConfirm(null); },
         onConfirm: confirmRestore
