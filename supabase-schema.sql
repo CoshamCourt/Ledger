@@ -125,9 +125,10 @@ create policy "Users can read own role"
 
 -- ---------------------------------------------------------------------------
 -- 5. ORG-WIDE SETTINGS
---    Single row (id = 1) holding details such as the BACS bank details used
---    in the top-up email template. Admin-only — Staff and logged-out users
---    get nothing, so these never need to live in the client-side code.
+--    Single row (id = 1) holding details used in the top-up email template:
+--    the BACS bank details and the name a cheque should be made payable to.
+--    Admin-only — Staff and logged-out users get nothing, so none of this
+--    needs to live in the client-side code.
 -- ---------------------------------------------------------------------------
 
 create table if not exists org_settings (
@@ -135,8 +136,12 @@ create table if not exists org_settings (
   bacs_account_name text,
   bacs_bank_name text,
   bacs_sort_code text,
-  bacs_account_number text
+  bacs_account_number text,
+  cheque_payee text
 );
+
+-- For databases created before cheque_payee existed.
+alter table org_settings add column if not exists cheque_payee text;
 
 alter table org_settings enable row level security;
 
