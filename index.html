@@ -152,26 +152,50 @@
     if (!trimmed) return trimmed;
     return trimmed.split(/\s+/)[0];
   }
+  // One indented detail line inside a payment method block. A single space
+  // after the label, rather than padding into columns, because email clients
+  // use a proportional font and padded columns come out ragged.
+  function emailDetailLine(label, value) {
+    return "    " + label + ": " + value;
+  }
+
   function buildTopUpEmail(resident, bankDetails) {
     var balance = currentBalance(resident.transactions);
     var reference = "PA " + getInitials(resident.name) + resident.room;
     var firstName = getFirstName(resident.name);
     var subject = "Personal Allowance Balance Top-Up Request - " + resident.name;
     var hasBankDetails = !!(bankDetails && bankDetails.accountName && bankDetails.bankName && bankDetails.sortCode && bankDetails.accountNumber);
-    var bacsLines = hasBankDetails
+
+    var bacsBlock = hasBankDetails
       ? [
-          "BACS: Please use the reference " + reference + " and confirm once the payment is sent.",
-          "   Account Name: " + bankDetails.accountName,
-          "   Bank: " + bankDetails.bankName,
-          "   Sort Code: " + bankDetails.sortCode,
-          "   Account Number: " + bankDetails.accountNumber
+          "- BACS",
+          emailDetailLine("Account name", bankDetails.accountName),
+          emailDetailLine("Bank", bankDetails.bankName),
+          emailDetailLine("Sort code", bankDetails.sortCode),
+          emailDetailLine("Account number", bankDetails.accountNumber),
+          emailDetailLine("Reference", reference),
+          "    Please let us know once the payment has been sent."
         ]
       : [
-          "BACS: Please contact the office for our bank transfer details (reference " + reference + ")."
+          "- BACS",
+          "    Please contact the office for our bank transfer details (reference " + reference + ")."
         ];
-    var chequeLine = (bankDetails && bankDetails.chequePayee)
-      ? "Cheque: Payable to " + bankDetails.chequePayee
-      : "Cheque: Please contact the office for details of who to make the cheque payable to.";
+
+    var chequeBlock = (bankDetails && bankDetails.chequePayee)
+      ? [
+          "- Cheque",
+          "    Payable to " + bankDetails.chequePayee
+        ]
+      : [
+          "- Cheque",
+          "    Please contact the office for details of who to make the cheque payable to."
+        ];
+
+    var cashBlock = [
+      "- Cash",
+      "    Please feel free to visit our office during working hours."
+    ];
+
     var bodyLines = [
       "Dear " + (resident.familyName || "Family Member") + ",",
       "",
@@ -179,14 +203,16 @@
       "",
       "I am reaching out to let you know that " + firstName + "'s current personal allowance balance is " + gbp.format(balance) + ". To ensure that they continue to have access to the necessary personal items and services, we would greatly appreciate it if you could arrange a top-up at your earliest convenience.",
       "",
-      "For your convenience, the personal allowance can be topped up using one of the following methods:",
+      "You can top up the personal allowance using any of the following methods:",
       ""
-    ].concat(bacsLines).concat([
-      chequeLine,
-      "Cash: Please feel free to visit our office during working hours.",
-      "",
-      "Thank you very much for your cooperation, and please don't hesitate to reach out if you have any questions."
-    ]);
+    ]
+      .concat(bacsBlock).concat([""])
+      .concat(chequeBlock).concat([""])
+      .concat(cashBlock).concat([
+        "",
+        "Thank you very much for your cooperation, and please don't hesitate to reach out if you have any questions."
+      ]);
+
     return { subject: subject, body: bodyLines.join("\r\n") };
   }
   function currentBalance(transactions) {
