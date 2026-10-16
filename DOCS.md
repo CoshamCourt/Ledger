@@ -93,10 +93,11 @@ Balances are always calculated from the transactions, never stored as a figure t
 
 | File | What it is |
 |---|---|
-| `index.html` | The entire application. Served as `index.html` on the `main` branch so the site works from the plain address |
+| `index.html` | The entire application. Named the same on every branch; GitHub Pages serves it from `main` so the site works from the plain address |
 | `supabase-schema.sql` | Database structure and all security policies, for reference or rebuilding from scratch |
 | `README.md` | Short overview |
 | `DOCS.md` | This file |
+| `CLAUDE.md` | Working instructions for Claude when making changes to this repository |
 
 ---
 
@@ -104,7 +105,7 @@ Balances are always calculated from the transactions, never stored as a figure t
 
 The `main` branch is what's live. GitHub Pages republishes the site automatically within a minute or two of a change being pushed to `main`.
 
-Changes are developed and tested on a working branch first, then copied across to `main` to go live. If a change appears not to have taken effect, hard-refresh the browser (`Ctrl`+`Shift`+`R`, or `Cmd`+`Shift`+`R` on a Mac) to bypass the cache.
+Changes are developed and tested on a working branch first, then copied across to `main` to go live. The app file is called `index.html` on both branches, so going live is a straight copy with nothing to rename. If a change appears not to have taken effect, hard-refresh the browser (`Ctrl`+`Shift`+`R`, or `Cmd`+`Shift`+`R` on a Mac) to bypass the cache.
 
 Pushing app changes **never** affects resident data — the code and the data are stored in completely separate places.
 

@@ -29,9 +29,9 @@ This is real financial data about vulnerable people, and it is checked by inspec
 
 ### Branches and file names
 
-- Work happens on a working branch (currently `claude/resident-allowance-supabase-j37leq`). There the app is `resident-ledger.html`.
-- On `main`, which is the live site, the same app is `index.html`.
-- Pushing to `main` puts a change live within a minute or two. **Never push to `main` without my explicit OK.** When I approve going live, copy the working file to `index.html` on `main`.
+- Work happens on a working branch (currently `claude/resident-allowance-supabase-j37leq`). On `main`, which is the live site, the same code is served by GitHub Pages.
+- The app is `index.html` on both branches, so going live is a straight copy with no renaming.
+- Pushing to `main` puts a change live within a minute or two. **Never push to `main` without my explicit OK.** When I approve going live, copy `index.html` from the working branch to `main`.
 
 ## Non-negotiable rules
 
