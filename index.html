@@ -152,12 +152,11 @@
     if (!trimmed) return trimmed;
     return trimmed.split(/\s+/)[0];
   }
-  // One indented detail line inside a payment method block. The label is
-  // padded so the values line up in a column.
+  // One indented detail line inside a payment method block. A single space
+  // after the label, rather than padding into columns, because email clients
+  // use a proportional font and padded columns come out ragged.
   function emailDetailLine(label, value) {
-    var padded = label + ":";
-    while (padded.length < 17) padded += " ";
-    return "    " + padded + value;
+    return "    " + label + ": " + value;
   }
 
   function buildTopUpEmail(resident, bankDetails) {
