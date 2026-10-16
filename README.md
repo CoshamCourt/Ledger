@@ -1,6 +1,6 @@
 # Resident Personal Allowance Ledger
 
-A web app for recording and tracking residents' personal allowance (petty cash) accounts at Cosham Court Nursing Home. Management record cash in and out and print signed ledger sheets; care staff can check balances at a glance.
+A web app for recording and tracking residents' personal allowance (petty cash) accounts. Management record cash in and out and print signed ledger sheets; care staff can check balances at a glance.
 
 ## Running it
 
